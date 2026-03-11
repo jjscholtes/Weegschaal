@@ -1,21 +1,30 @@
 # Weegschaal
 
-Weegschaal is an iPhone app that helps you read and track measurements from a Medisana BS 444 scale.
+SwiftUI iOS app for reading measurements from a Medisana BS 444 scale over Bluetooth and optionally syncing them to Apple Health.
 
-The app connects to the scale over Bluetooth, imports saved weigh-ins, shows your measurement history, and can sync data to Apple Health. You can also set the correct user profile when the scale is shared by multiple people.
+## Project
 
-## What You Can Do
-
-- Connect your iPhone to the scale
-- Import recent measurements
-- Review your weight history in the app
-- Sync measurements with Apple Health
-- Choose the right scale user profile in settings
+- Xcode project: `Weegschaal/Weegschaal/Weegschaal.xcodeproj`
+- App sources: `Weegschaal/Weegschaal/Weegschaal/`
+- Setup notes: `SETUP.md`
 
 ## Requirements
 
-- iPhone with iOS 17 or newer
-- A Medisana BS 444 scale
-- Bluetooth enabled
+- Xcode 15 or newer
+- iPhone with iOS 17+
+- Apple ID for device signing
 
-Open `Weegschaal.xcodeproj` in Xcode to build and run the app.
+## Features
+
+- Retrieve scale measurements over Bluetooth
+- View recent and historical measurements
+- Configure profile settings
+- HealthKit integration
+
+## Run
+
+1. Open `Weegschaal/Weegschaal/Weegschaal.xcodeproj` in Xcode.
+2. Configure signing for your Apple ID.
+3. Build and run on an iPhone.
+
+Additional setup details are documented in `SETUP.md`.

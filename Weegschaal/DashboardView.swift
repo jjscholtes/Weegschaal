@@ -7,8 +7,7 @@ struct DashboardView: View {
     @Environment(\.modelContext) var context
     @Query(sort: \Meting.datum, order: .reverse) var metingen: [Meting]
 
-    @AppStorage(Profiel.storageKey) private var profielData: Data = (try? JSONEncoder().encode(Profiel())) ?? Data()
-    @AppStorage("doelgewicht") private var doelgewicht: Double = 75
+    @AppStorage("profielData") private var profielData: Data = (try? JSONEncoder().encode(Profiel())) ?? Data()
     @State private var toonVerbindSheet = false
     @State private var healthAlert = false
     @State private var healthBericht = ""
@@ -17,20 +16,12 @@ struct DashboardView: View {
         (try? JSONDecoder().decode(Profiel.self, from: profielData)) ?? Profiel()
     }
 
-    private var profielMetingen: [Meting] {
-        MetingAnalyse.metingenVoorProfiel(metingen, persoonId: profiel.persoonId)
-    }
-
     private var meestRecent: Meting? {
-        profielMetingen.last
+        metingen.first(where: { $0.persoonId == profiel.persoonId })
     }
 
     private var vorigeMeting: Meting? {
-        profielMetingen.dropLast().last
-    }
-
-    private var outlierIds: Set<UUID> {
-        MetingAnalyse.outlierIds(metingen: profielMetingen)
+        metingen.filter { $0.persoonId == profiel.persoonId }.dropFirst().first
     }
 
     var body: some View {
@@ -39,41 +30,25 @@ struct DashboardView: View {
                 Color(.systemGroupedBackground).ignoresSafeArea()
 
                 if let meting = meestRecent {
-                    GeometryReader { geo in
-                        let compact = geo.size.height < 800
-                        let tussenruimte: CGFloat = compact ? 6 : 10
-
-                        VStack(spacing: 0) {
-                            heroSectie(meting: meting, compact: compact)
-
-                            Spacer(minLength: tussenruimte)
-                            doelKaart(meting: meting, compact: compact)
-
-                            Spacer(minLength: tussenruimte)
-                            trendAnalyseKaart(compact: compact)
-
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            heroSectie(meting: meting)
                             if meting.heeftLichaamssamenstelling {
-                                Spacer(minLength: tussenruimte)
-                                lichaamsKaart(meting: meting, compact: compact)
-                            }
-                            if outlierIds.contains(meting.id) {
-                                Spacer(minLength: tussenruimte)
-                                outlierWaarschuwing(meting: meting, compact: compact)
+                                lichaamsKaart(meting: meting)
                             }
                         }
                         .padding(.horizontal, 16)
-                        .padding(.top, compact ? 2 : 8)
-                        .padding(.bottom, compact ? 96 : 100)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                        .padding(.top, 8)
+                        .padding(.bottom, 100)
                     }
                 } else {
                     legeStatus
                 }
             }
-            .navigationTitle("Wegen")
-            .navigationBarTitleDisplayMode(.inline)
+            .navigationTitle("Weegschaal")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
+                ToolbarItem(placement: .topBarTrailing) {
                     if let meting = meestRecent {
                         Button {
                             syncNaarHealth(meting: meting)
@@ -82,23 +57,6 @@ struct DashboardView: View {
                                 .foregroundStyle(.pink)
                         }
                     }
-
-                    Menu {
-                        Button {
-                            startNieuweMeting()
-                        } label: {
-                            Label("Nieuwe meting", systemImage: "scalemass.fill")
-                        }
-
-                        Button {
-                            startNieuweMeting(forceFullImport: true)
-                        } label: {
-                            Label("Importeer volledige historie", systemImage: "arrow.down.doc.fill")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .disabled(bluetooth.status.isBusy)
                 }
             }
             .safeAreaInset(edge: .bottom) {
@@ -120,15 +78,15 @@ struct DashboardView: View {
 
     // MARK: - Hero sectie
 
-    private func heroSectie(meting: Meting, compact: Bool) -> some View {
+    private func heroSectie(meting: Meting) -> some View {
         let bmi = meting.bmi ?? profiel.berekenBMI(gewicht: meting.gewicht)
         let verschil = vorigeMeting.map { meting.gewicht - $0.gewicht }
 
-        return VStack(spacing: compact ? 8 : 16) {
+        return VStack(spacing: 20) {
             // Datum + trend
             HStack(spacing: 8) {
                 Text(meting.datum.formatted(.dateTime.weekday(.wide).day().month()))
-                    .font(compact ? .caption2 : .subheadline)
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -138,9 +96,9 @@ struct DashboardView: View {
                         String(format: "%+.1f kg", v),
                         systemImage: v >= 0 ? "arrow.up" : "arrow.down"
                     )
-                    .font(compact ? .caption2.bold() : .caption.bold())
-                    .padding(.horizontal, compact ? 8 : 10)
-                    .padding(.vertical, compact ? 3 : 4)
+                    .font(.caption.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
                     .background((v >= 0 ? Color.orange : Color.mint).opacity(0.12))
                     .foregroundStyle(v >= 0 ? .orange : .mint)
                     .clipShape(Capsule())
@@ -150,50 +108,50 @@ struct DashboardView: View {
             // Groot gewichtsgetal
             HStack(alignment: .lastTextBaseline, spacing: 6) {
                 Text(String(format: "%.1f", meting.gewicht))
-                    .font(.system(size: compact ? 58 : 76, weight: .bold))
+                    .font(.system(size: 84, weight: .bold))
                     .monospacedDigit()
                     .contentTransition(.numericText())
                 Text("kg")
-                    .font(compact ? .title3 : .title2)
+                    .font(.title2)
                     .foregroundStyle(.secondary)
-                    .padding(.bottom, compact ? 6 : 8)
+                    .padding(.bottom, 8)
             }
             .frame(maxWidth: .infinity, alignment: .center)
 
             // BMI balk
             BMIBalk(bmi: bmi)
         }
-        .padding(compact ? 12 : 18)
+        .padding(20)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 
-    // MARK: - Lichaamssamenstelling kaart
+    // MARK: - Lichaamsamenstelling kaart
 
-    private func lichaamsKaart(meting: Meting, compact: Bool) -> some View {
-        return VStack(alignment: .leading, spacing: compact ? 10 : 14) {
+    private func lichaamsKaart(meting: Meting) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
             Text("Lichaamssamenstelling")
-                .font(compact ? .caption.bold() : .footnote.bold())
+                .font(.footnote.bold())
                 .foregroundStyle(.secondary)
                 .textCase(.uppercase)
                 .kerning(0.3)
 
-            HStack(spacing: compact ? 0 : 2) {
+            HStack(spacing: 0) {
                 if let vet = meting.vetpercentage {
-                    LichaamsRingView(waarde: vet, referentie: 40, eenheid: "%", label: "Vet", kleur: .vetKleur)
-                        .scaleEffect(compact ? 0.86 : 1)
+                    LichaamsRingView(waarde: vet, referentie: 40, eenheid: "%",
+                                    label: "Vet", kleur: .vetKleur)
                 }
                 if let water = meting.waterpercentage {
-                    LichaamsRingView(waarde: water, referentie: 70, eenheid: "%", label: "Water", kleur: .waterKleur)
-                        .scaleEffect(compact ? 0.86 : 1)
+                    LichaamsRingView(waarde: water, referentie: 70, eenheid: "%",
+                                    label: "Water", kleur: .waterKleur)
                 }
                 if let spier = meting.spierpercentage {
-                    LichaamsRingView(waarde: spier, referentie: 65, eenheid: "%", label: "Spier", kleur: .spierKleur)
-                        .scaleEffect(compact ? 0.86 : 1)
+                    LichaamsRingView(waarde: spier, referentie: 65, eenheid: "%",
+                                    label: "Spier", kleur: .spierKleur)
                 }
                 if let bot = meting.botmassa {
-                    LichaamsRingView(waarde: bot, referentie: 5, eenheid: "kg", label: "Bot", kleur: .botKleur)
-                        .scaleEffect(compact ? 0.86 : 1)
+                    LichaamsRingView(waarde: bot, referentie: 5, eenheid: "kg",
+                                    label: "Bot", kleur: .botKleur)
                 }
             }
 
@@ -202,158 +160,17 @@ struct DashboardView: View {
                 HStack {
                     Image(systemName: "flame.fill")
                         .foregroundStyle(.orange)
-                    Text("\(kcal.formatted(.number.grouping(.automatic))) kcal")
-                        .font(compact ? .caption2.bold() : .caption.bold())
-                    Text(compact ? "rustverbruik" : "geschatte energieverbruik")
-                        .font(compact ? .caption2 : .caption)
+                    Text("\(kcal) kcal")
+                        .font(.subheadline.bold())
+                    Text("geschatte energieverbruik")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
             }
-
-            if let vet = meting.vetpercentage {
-                let vetmassa = meting.gewicht * vet / 100
-                let vetvrijeMassa = meting.gewicht - vetmassa
-
-                Divider()
-                VStack(spacing: compact ? 6 : 8) {
-                    overzichtBerekendRij(
-                        label: "Vetmassa",
-                        waarde: "\(vetmassa.formatted(.number.precision(.fractionLength(1)))) kg",
-                        icoon: "drop.fill",
-                        kleur: .vetKleur,
-                        compact: compact
-                    )
-                    overzichtBerekendRij(
-                        label: "Vetvrije massa",
-                        waarde: "\(vetvrijeMassa.formatted(.number.precision(.fractionLength(1)))) kg",
-                        icoon: "figure.strengthtraining.traditional",
-                        kleur: .spierKleur,
-                        compact: compact
-                    )
-                }
-            }
         }
-        .padding(compact ? 12 : 14)
+        .padding(20)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func overzichtBerekendRij(
-        label: String,
-        waarde: String,
-        icoon: String,
-        kleur: Color,
-        compact: Bool
-    ) -> some View {
-        HStack {
-            Image(systemName: icoon)
-                .font(compact ? .caption : .subheadline)
-                .foregroundStyle(kleur)
-                .frame(width: compact ? 16 : 20)
-            Text(label)
-                .font(compact ? .caption : .subheadline)
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text(waarde)
-                .font((compact ? Font.caption : Font.subheadline).weight(.semibold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.85)
-        }
-    }
-
-    // MARK: - Doelgewicht + trend
-
-    private func doelKaart(meting: Meting, compact: Bool) -> some View {
-        let start = profielMetingen.first?.gewicht ?? meting.gewicht
-        let resterend = meting.gewicht - doelgewicht
-        let totaalPad = abs(start - doelgewicht)
-        let afgelegd = abs(start - meting.gewicht)
-        let progress = totaalPad > 0 ? min(max(afgelegd / totaalPad, 0), 1) : (abs(resterend) < 0.1 ? 1 : 0)
-
-        return VStack(alignment: .leading, spacing: compact ? 6 : 8) {
-            HStack {
-                Label("Doelgewicht", systemImage: "target")
-                    .font(compact ? .callout.bold() : .subheadline.bold())
-                Spacer()
-                Text("\(doelgewicht.formatted(.number.precision(.fractionLength(1)))) kg")
-                    .font(compact ? .callout : .subheadline)
-                    .foregroundStyle(.secondary)
-            }
-
-            if abs(resterend) < 0.1 {
-                Text("Doel bereikt")
-                    .font(compact ? .callout.bold() : .subheadline.bold())
-                    .foregroundStyle(.green)
-            } else if resterend > 0 {
-                Text("Nog \(resterend.formatted(.number.precision(.fractionLength(1)))) kg te gaan")
-                    .font(compact ? .callout : .subheadline)
-            } else {
-                Text("Je zit \(abs(resterend).formatted(.number.precision(.fractionLength(1)))) kg onder je doel")
-                    .font(compact ? .callout : .subheadline)
-            }
-
-            ProgressView(value: progress)
-                .tint(.appBlauw)
-        }
-        .padding(compact ? 12 : 14)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func trendAnalyseKaart(compact: Bool) -> some View {
-        VStack(alignment: .leading, spacing: compact ? 8 : 10) {
-            Text("Trendanalyse")
-                .font(compact ? .caption.bold() : .footnote.bold())
-                .foregroundStyle(.secondary)
-                .textCase(.uppercase)
-                .kerning(0.3)
-
-            HStack(spacing: compact ? 6 : 10) {
-                trendVakje(dagen: 7, titel: "7 dagen", compact: compact)
-                trendVakje(dagen: 30, titel: "30 dagen", compact: compact)
-                trendVakje(dagen: 90, titel: "90 dagen", compact: compact)
-            }
-        }
-        .padding(compact ? 12 : 14)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func trendVakje(dagen: Int, titel: String, compact: Bool) -> some View {
-        let delta = MetingAnalyse.trendDelta(metingen: profielMetingen, dagen: dagen)
-
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(titel)
-                .font(compact ? .caption2 : .caption)
-                .foregroundStyle(.secondary)
-            if let delta {
-                Text(String(format: "%+.1f kg", delta))
-                    .font((compact ? Font.callout.bold() : Font.headline).monospacedDigit())
-                    .foregroundStyle(delta > 0 ? .orange : (delta < 0 ? .mint : .primary))
-            } else {
-                Text("—")
-                    .font(compact ? .callout : .headline)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(compact ? 8 : 10)
-        .background(Color(.tertiarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    private func outlierWaarschuwing(meting: Meting, compact: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.orange)
-            Text("Meting op \(meting.datum.formatted(date: .abbreviated, time: .omitted)) wijkt sterk af. Controleer of dit een correcte meting is.")
-                .font(compact ? .caption : .subheadline)
-        }
-        .padding(compact ? 10 : 14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 
     // MARK: - Lege status
@@ -379,7 +196,8 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             Divider()
             Button {
-                startNieuweMeting()
+                toonVerbindSheet = true
+                bluetooth.startScan()
             } label: {
                 HStack(spacing: 8) {
                     if bluetooth.status.isBusy {
@@ -408,31 +226,12 @@ struct DashboardView: View {
 
     // MARK: - Acties
 
-    private func startNieuweMeting(forceFullImport: Bool = false) {
-        toonVerbindSheet = true
-        bluetooth.startScan(voor: profiel.persoonId, forceFullImport: forceFullImport)
-    }
-
     private func slaMetingenOp(_ metingData: [MetingData]) {
         guard !metingData.isEmpty else { return }
-        let verwijderdeBronIds = VerwijderdeWeegschaalMetingen.laad()
-        let bevatProfielMetingen = metingData.contains { $0.persoonId == profiel.persoonId }
-        var bestaandeDatums = Set(
-            metingen
-                .filter { $0.persoonId == profiel.persoonId }
-                .map { $0.datum.timeIntervalSince1970 }
-        )
-        var heeftNieuweInserts = false
-
+        let bestaandeDatums = Set(metingen.map { $0.datum.timeIntervalSince1970 })
         for data in metingData where data.persoonId == profiel.persoonId {
-            let bronId = data.weegschaalBronId
-            guard !verwijderdeBronIds.contains(bronId) else { continue }
-
-            let timestamp = data.datum.timeIntervalSince1970
-            guard !bestaandeDatums.contains(timestamp) else { continue }
-
+            guard !bestaandeDatums.contains(data.datum.timeIntervalSince1970) else { continue }
             let meting = Meting(datum: data.datum, gewicht: data.gewicht, persoonId: data.persoonId)
-            meting.weegschaalBronId = bronId
             meting.vetpercentage   = data.vetpercentage
             meting.waterpercentage = data.waterpercentage
             meting.spierpercentage = data.spierpercentage
@@ -440,41 +239,18 @@ struct DashboardView: View {
             meting.kcal            = data.kcal
             meting.bmi             = profiel.berekenBMI(gewicht: data.gewicht)
             context.insert(meting)
-            bestaandeDatums.insert(timestamp)
-            heeftNieuweInserts = true
         }
-
-        if heeftNieuweInserts {
-            try? context.save()
-        }
-
-        if bluetooth.importModus == .volledigeHistorie, bevatProfielMetingen {
-            bluetooth.markeerVolledigeImportVoltooid(voor: profiel.persoonId)
-        }
-
-        bluetooth.markeerNieuweMetingenVerwerkt()
     }
 
     private func syncNaarHealth(meting: Meting) {
         if !healthKit.isGeautoriseerd {
-            healthKit.vraagAutorisatie { success, bericht in
-                if success {
-                    syncNaarHealth(meting: meting)
-                } else {
-                    healthBericht = bericht ?? "Toegang tot Apple Health werd niet verleend."
-                    healthAlert = true
-                }
+            healthKit.vraagAutorisatie { success in
+                if success { syncNaarHealth(meting: meting) }
             }
             return
         }
-        healthKit.synchroniseer(meting: meting, profiel: profiel) { success, error in
-            if success {
-                healthBericht = healthKit.status == .gedeeltelijk
-                    ? "Meting gesynchroniseerd voor de geautoriseerde Apple Health-metrics."
-                    : "Meting gesynchroniseerd met Apple Health."
-            } else {
-                healthBericht = error?.localizedDescription ?? "Synchronisatie mislukt."
-            }
+        healthKit.synchroniseer(meting: meting, profiel: profiel) { success, _ in
+            healthBericht = success ? "Meting gesynchroniseerd met Apple Health." : "Synchronisatie mislukt."
             healthAlert = true
         }
     }
@@ -634,15 +410,10 @@ struct VerbindSheet: View {
                         .font(.headline)
                         .multilineTextAlignment(.center)
 
-                    Text(bluetooth.importModus.omschrijving)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-
                     VStack(spacing: 4) {
                         StapRij(nummer: 1, tekst: "Stap op de weegschaal", actief: stap == 1, klaar: stap > 1)
                         StapRij(nummer: 2, tekst: "Verbinding maken",      actief: stap == 2, klaar: stap > 2)
-                        StapRij(nummer: 3, tekst: bluetooth.importModus.stapTekst, actief: stap == 3, klaar: stap > 3)
+                        StapRij(nummer: 3, tekst: "Metingen ophalen",      actief: stap == 3, klaar: stap > 3)
                     }
                     .padding(.top, 8)
                 }

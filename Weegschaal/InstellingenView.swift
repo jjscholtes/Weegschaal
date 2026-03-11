@@ -1,32 +1,9 @@
 import SwiftUI
-import UIKit
 
 struct InstellingenView: View {
-    @AppStorage(Profiel.storageKey) private var profielData: Data = (try? JSONEncoder().encode(Profiel())) ?? Data()
-    @AppStorage("doelgewicht") private var doelgewicht: Double = 75
-    @AppStorage("herinneringAan") private var herinneringAan = false
-    @AppStorage("herinneringUur") private var herinneringUur = 8
-    @AppStorage("herinneringMinuut") private var herinneringMinuut = 0
-
+    @AppStorage("profielData") private var profielData: Data = (try? JSONEncoder().encode(Profiel())) ?? Data()
     @EnvironmentObject var healthKit: HealthKitManager
-    @EnvironmentObject var reminders: ReminderManager
     @State private var profiel: Profiel = .laden()
-    @State private var healthAlert = false
-    @State private var healthBericht = ""
-    @State private var toonDoelgewichtSheet = false
-
-    private var herinneringsTijd: Binding<Date> {
-        Binding(
-            get: {
-                Calendar.current.date(from: DateComponents(hour: herinneringUur, minute: herinneringMinuut)) ?? Date()
-            },
-            set: { nieuw in
-                let comp = Calendar.current.dateComponents([.hour, .minute], from: nieuw)
-                herinneringUur = comp.hour ?? 8
-                herinneringMinuut = comp.minute ?? 0
-            }
-        )
-    }
 
     var body: some View {
         NavigationStack {
@@ -35,6 +12,7 @@ struct InstellingenView: View {
 
                 Form {
                     Section {
+                        // Profiel slot
                         HStack {
                             Label {
                                 VStack(alignment: .leading, spacing: 2) {
@@ -56,6 +34,7 @@ struct InstellingenView: View {
                             .labelsHidden()
                         }
 
+                        // Geslacht
                         HStack {
                             Label {
                                 Text("Geslacht")
@@ -74,6 +53,7 @@ struct InstellingenView: View {
                             .frame(width: 130)
                         }
 
+                        // Lengte
                         HStack {
                             Label {
                                 Text("Lengte")
@@ -86,6 +66,7 @@ struct InstellingenView: View {
                                 .fixedSize()
                         }
 
+                        // Leeftijd
                         HStack {
                             Label {
                                 Text("Leeftijd")
@@ -97,96 +78,33 @@ struct InstellingenView: View {
                             Stepper("\(profiel.leeftijd) jaar", value: $profiel.leeftijd, in: 10...120)
                                 .fixedSize()
                         }
+
                     } header: {
                         Text("Mijn gegevens")
                     } footer: {
                         Text("Je lengte en leeftijd worden gebruikt om je BMI te berekenen.")
                     }
 
-                    Section("Doelgewicht") {
-                        HStack {
-                            Label("Doel", systemImage: "target")
-                                .foregroundStyle(Color.appBlauw)
-                            Spacer()
-                            Button {
-                                toonDoelgewichtSheet = true
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Text("\(doelgewicht.formatted(.number.precision(.fractionLength(1)))) kg")
-                                        .monospacedDigit()
-                                    Image(systemName: "pencil")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        Stepper(
-                            value: $doelgewicht,
-                            in: 30...250,
-                            step: 0.1
-                        ) {
-                            Text("Pas doelgewicht aan")
-                        }
-                    }
-
-                    Section("Meet herinneringen") {
-                        HStack {
-                            Label("Notificatiestatus", systemImage: "bell.badge.fill")
-                                .foregroundStyle(Color.appBlauw)
-                            Spacer()
-                            Text(reminders.status.label)
-                                .foregroundStyle(reminders.status == .geautoriseerd ? .green : .secondary)
-                        }
-
-                        Toggle("Dagelijkse herinnering", isOn: $herinneringAan)
-
-                        if herinneringAan {
-                            DatePicker(
-                                "Tijd",
-                                selection: herinneringsTijd,
-                                displayedComponents: .hourAndMinute
-                            )
-                        }
-
-                        if reminders.status == .geweigerd {
-                            Button("Open iOS instellingen") {
-                                openSysteemInstellingen()
-                            }
-                        }
-                    }
-
                     Section("Apple Health") {
                         HStack {
-                            Label("Synchronisatie", systemImage: "heart.fill")
-                                .foregroundStyle(.pink)
+                            Label {
+                                Text("Synchronisatie")
+                            } icon: {
+                                Image(systemName: "heart.fill")
+                                    .foregroundStyle(.pink)
+                            }
                             Spacer()
-                            Text(healthKit.status.label)
-                                .foregroundStyle(healthKit.status == .geautoriseerd ? .green : .secondary)
+                            Text(healthKit.isGeautoriseerd ? "Actief" : "Niet actief")
+                                .foregroundStyle(healthKit.isGeautoriseerd ? .green : .secondary)
                                 .font(.subheadline)
                         }
 
-                        Text(healthKit.status.detail)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-
-                        if healthKit.status != .geautoriseerd {
+                        if !healthKit.isGeautoriseerd {
                             Button {
-                                healthKit.vraagAutorisatie { success, bericht in
-                                    if !success {
-                                        healthBericht = bericht ?? "Toegang tot Apple Health werd niet verleend."
-                                        healthAlert = true
-                                    }
-                                }
+                                healthKit.vraagAutorisatie { _ in }
                             } label: {
                                 Label("Toegang verlenen aan Apple Health", systemImage: "arrow.right.circle")
                                     .foregroundStyle(Color.appBlauw)
-                            }
-                        }
-
-                        if healthKit.status == .geweigerd || healthKit.status == .gedeeltelijk {
-                            Button("Open iOS instellingen") {
-                                openSysteemInstellingen()
                             }
                         }
                     }
@@ -199,37 +117,10 @@ struct InstellingenView: View {
                 }
             }
             .navigationTitle("Instellingen")
-            .onAppear {
-                healthKit.verversStatus()
-                reminders.verversStatus()
-            }
             .onChange(of: profiel.persoonId)  { _, _ in slaOp() }
             .onChange(of: profiel.geslacht)   { _, _ in slaOp() }
             .onChange(of: profiel.lengte)     { _, _ in slaOp() }
             .onChange(of: profiel.leeftijd)   { _, _ in slaOp() }
-            .onChange(of: herinneringAan) { _, nieuw in
-                configureReminder(isEnabled: nieuw)
-            }
-            .onChange(of: herinneringUur) { _, _ in
-                if herinneringAan { planHerinnering() }
-            }
-            .onChange(of: herinneringMinuut) { _, _ in
-                if herinneringAan { planHerinnering() }
-            }
-            .alert("Apple Health", isPresented: $healthAlert) {
-                Button("OK") {}
-            } message: {
-                Text(healthBericht)
-            }
-            .sheet(isPresented: $toonDoelgewichtSheet) {
-                GewichtInvoerSheet(
-                    titel: "Doelgewicht",
-                    bereik: 30...250,
-                    initieleWaarde: doelgewicht
-                ) { nieuweWaarde in
-                    doelgewicht = nieuweWaarde
-                }
-            }
         }
     }
 
@@ -238,42 +129,5 @@ struct InstellingenView: View {
         if let data = try? JSONEncoder().encode(profiel) {
             profielData = data
         }
-    }
-
-    private func configureReminder(isEnabled: Bool) {
-        guard isEnabled else {
-            reminders.verwijderHerinneringen()
-            return
-        }
-
-        if reminders.status == .geautoriseerd || reminders.status == .voorlopig {
-            planHerinnering()
-            return
-        }
-
-        reminders.vraagToestemming { success, bericht in
-            if success {
-                planHerinnering()
-            } else {
-                herinneringAan = false
-                healthBericht = bericht ?? "Notificatie-toegang werd niet verleend."
-                healthAlert = true
-            }
-        }
-    }
-
-    private func planHerinnering() {
-        reminders.planDagelijkseHerinnering(uur: herinneringUur, minuut: herinneringMinuut) { success, bericht in
-            if !success {
-                herinneringAan = false
-                healthBericht = bericht ?? "Herinnering kon niet worden gepland."
-                healthAlert = true
-            }
-        }
-    }
-
-    private func openSysteemInstellingen() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
     }
 }

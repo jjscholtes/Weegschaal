@@ -26,11 +26,7 @@ final class Meting {
     var kcal: Int?
     var bmi: Double?
     var persoonId: Int
-    var weegschaalBronId: String?
     var gesynchroniseerdMetHealth: Bool = false
-    var healthSyncId: String?
-    var healthGesynchroniseerdeTypeIds: String?
-    var healthSyncDatum: Date?
 
     init(datum: Date, gewicht: Double, persoonId: Int) {
         self.datum = datum
@@ -56,55 +52,9 @@ struct MetingData: Equatable {
     var kcal: Int?
 }
 
-extension Meting {
-    static func maakWeegschaalBronId(datum: Date, gewicht: Double, persoonId: Int) -> String {
-        let timestamp = Int(datum.timeIntervalSince1970.rounded())
-        let gewichtCode = Int((gewicht * 10).rounded())
-        return "\(persoonId)-\(timestamp)-\(gewichtCode)"
-    }
-
-    var fallbackWeegschaalBronId: String {
-        weegschaalBronId ?? Self.maakWeegschaalBronId(datum: datum, gewicht: gewicht, persoonId: persoonId)
-    }
-}
-
-extension MetingData {
-    var weegschaalBronId: String {
-        Meting.maakWeegschaalBronId(datum: datum, gewicht: gewicht, persoonId: persoonId)
-    }
-}
-
-enum VerwijderdeWeegschaalMetingen {
-    private static let storageKey = "verwijderdeWeegschaalBronIds"
-
-    static func laad() -> Set<String> {
-        guard
-            let data = UserDefaults.standard.data(forKey: storageKey),
-            let ids = try? JSONDecoder().decode(Set<String>.self, from: data)
-        else {
-            return []
-        }
-        return ids
-    }
-
-    static func voegToe(_ bronId: String) {
-        var ids = laad()
-        ids.insert(bronId)
-        slaOp(ids)
-    }
-
-    private static func slaOp(_ ids: Set<String>) {
-        guard let data = try? JSONEncoder().encode(ids) else { return }
-        UserDefaults.standard.set(data, forKey: storageKey)
-    }
-}
-
 // MARK: - Gebruikersprofiel (opgeslagen in UserDefaults)
 
 struct Profiel: Codable {
-    static let storageKey = "profielData"
-    private static let legacyStorageKey = "profiel"
-
     var persoonId: Int = 1
     var lengte: Int = 175        // cm
     var leeftijd: Int = 30
@@ -125,78 +75,16 @@ struct Profiel: Codable {
     }
 
     static func laden() -> Profiel {
-        let defaults = UserDefaults.standard
-
-        if let data = defaults.data(forKey: storageKey),
-           let profiel = try? JSONDecoder().decode(Profiel.self, from: data) {
-            return profiel
-        }
-
-        if let legacyData = defaults.data(forKey: legacyStorageKey),
-           let profiel = try? JSONDecoder().decode(Profiel.self, from: legacyData) {
-            if let migratedData = try? JSONEncoder().encode(profiel) {
-                defaults.set(migratedData, forKey: storageKey)
-            }
-            defaults.removeObject(forKey: legacyStorageKey)
-            return profiel
-        }
-
-        return Profiel()
+        guard let data = UserDefaults.standard.data(forKey: "profiel"),
+              let profiel = try? JSONDecoder().decode(Profiel.self, from: data)
+        else { return Profiel() }
+        return profiel
     }
 
     func opslaan() {
         if let data = try? JSONEncoder().encode(self) {
-            let defaults = UserDefaults.standard
-            defaults.set(data, forKey: Self.storageKey)
-            defaults.removeObject(forKey: Self.legacyStorageKey)
+            UserDefaults.standard.set(data, forKey: "profiel")
         }
-    }
-}
-
-// MARK: - Trend- en outlieranalyse
-
-enum MetingAnalyse {
-    static func metingenVoorProfiel(_ metingen: [Meting], persoonId: Int) -> [Meting] {
-        metingen
-            .filter { $0.persoonId == persoonId }
-            .sorted { $0.datum < $1.datum }
-    }
-
-    static func trendDelta(metingen: [Meting], dagen: Int) -> Double? {
-        let gesorteerd = metingen.sorted { $0.datum < $1.datum }
-        guard let laatste = gesorteerd.last else { return nil }
-        guard let startDatum = Calendar.current.date(byAdding: .day, value: -dagen, to: laatste.datum) else {
-            return nil
-        }
-
-        guard let eersteInPeriode = gesorteerd.first(where: { $0.datum >= startDatum && $0.id != laatste.id }) else {
-            return nil
-        }
-
-        return laatste.gewicht - eersteInPeriode.gewicht
-    }
-
-    static func outlierIds(metingen: [Meting]) -> Set<UUID> {
-        let gesorteerd = metingen.sorted { $0.datum < $1.datum }
-        guard gesorteerd.count >= 2 else { return [] }
-
-        var ids: Set<UUID> = []
-        for index in 1..<gesorteerd.count {
-            let vorige = gesorteerd[index - 1]
-            let huidige = gesorteerd[index]
-
-            let verschil = abs(huidige.gewicht - vorige.gewicht)
-            let dagen = max(huidige.datum.timeIntervalSince(vorige.datum) / 86_400, 0.0001)
-            let relatief = vorige.gewicht > 0 ? verschil / vorige.gewicht : 0
-
-            let grootAbsoluutVerschil = verschil >= 2.5
-            let grootRelatiefVerschil = relatief >= 0.04 && verschil >= 1.5
-            if dagen <= 3.0 && (grootAbsoluutVerschil || grootRelatiefVerschil) {
-                ids.insert(huidige.id)
-            }
-        }
-
-        return ids
     }
 }
 

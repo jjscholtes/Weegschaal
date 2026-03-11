@@ -1,0 +1,18 @@
+.DS_Store
+.claude/
+
+# Xcode user and build artifacts
+DerivedData/
+build/
+*.xcuserstate
+xcuserdata/
+
+# Swift Package Manager
+.build/
+Package.resolved
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
